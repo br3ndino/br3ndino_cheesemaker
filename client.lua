@@ -1,73 +1,108 @@
 local cows = {}
+local harvesting = false
 
--- Function to spawn cows at specific locations
-function spawnCowAtCoords(coords)
-    local cowModel = `a_c_cow` -- Use cow model
-
+-- Function to spawn cows
+function spawnCow(x, y, z)
+    local cowModel = `a_c_cow`
     RequestModel(cowModel)
-    while not HasModelLoaded(cowModel) do
-        Wait(100)
-    end
+    while not HasModelLoaded(cowModel) do Wait(100) end
 
-    local cowPed = CreatePed(4, cowModel, coords.x, coords.y, coords.z, 0.0, true, true)
-    SetEntityInvincible(cowPed, true)  -- Make the cow invincible
-    SetEntityVisible(cowPed, true, false) -- Make the cow visible
-    SetBlockingOfNonTemporaryEvents(cowPed, true) -- Prevent the cow from running
+    local cow = CreatePed(4, cowModel, x, y, z, 0.0, true, false)
+    SetEntityInvincible(cow, true)
+    FreezeEntityPosition(cow, true)
 
-    -- Save the cow data
-    table.insert(cows, { id = #cows + 1, ped = cowPed, location = coords })
+    exports['qb-target']:AddTargetEntity(cow, {
+        options = {
+            {
+                event = 'cheese:startMilkHarvest',
+                icon = 'fas fa-cow',
+                label = 'Harvest Milk',
+                action = function(entity)
+                    TriggerEvent('cheese:startMilkHarvest', cow)
+                end,
+            },
+        },
+        distance = 2.0,
+    })
+
+    table.insert(cows, cow)
 end
 
--- Example of where cows should spawn (could be randomized later)
-local cowLocations = {
-    vector3(2386.3560, 5054.5181, 46.4446), -- Add more locations as needed
-    vector3(2382.2139, 5049.9624, 46.4350),
-    vector3(2374.6006, 5048.5874, 46.4446),
-    vector3(2372.4551, 5055.9966, 46.4428)
-}
-
--- Spawn cows at defined locations
+-- Spawn cows at preset locations
 Citizen.CreateThread(function()
-    for _, coords in ipairs(cowLocations) do
-        spawnCowAtCoords(coords)
+    local spawnPoints = {
+        vector3(2386.3560, 5054.5181, 45.4446),
+        vector3(2382.2139, 5049.9624, 45.4350),
+        vector3(2374.6006, 5048.5874, 45.4446),
+        vector3(2372.4551, 5055.9966, 45.4428)
+    }
+    for _, point in pairs(spawnPoints) do
+        spawnCow(point.x, point.y, point.z)
     end
 end)
 
--- Interaction with cows (harvest milk)
-RegisterNetEvent('cheese:harvestMilk')
-AddEventHandler('cheese:harvestMilk', function(cowID)
-    local cow = cows[cowID]
+-- Function to handle harvesting loop
+function StartHarvestingLoop(cow)
+    Citizen.CreateThread(function()
+        while harvesting do
+            local playerPed = PlayerPedId()
+            local playerCoords = GetEntityCoords(playerPed)
+            local cowCoords = GetEntityCoords(cow)
+            local dist = #(playerCoords - cowCoords)
 
-    if cow then
-        -- Check if player is close enough to the cow
-        local playerPed = PlayerPedId()
-        local cowCoords = GetEntityCoords(cow.ped)
-        if #(GetEntityCoords(playerPed) - cowCoords) < 3.0 then
-            TriggerServerEvent('cheese:addMilk')
-            -- Optionally, play a milk harvesting animation here
-            print("Milk harvested from cow ID: " .. cowID)
-        else
-            TriggerEvent("QBCore:Notify", "You are too far from the cow!", "error")
+            print("Distance to cow:", dist)
+            print("Harvesting flag:", harvesting)
+
+            -- Stop if player moves too far
+            if dist > 3.0 then
+                TriggerEvent("QBCore:Notify", "You moved too far from the cow!", "error")
+                harvesting = false
+                return
+            end
+
+            -- Start progress bar (no return check, assume it runs)
+            exports['progressbar']:Progress({
+                name = "harvest_milk",
+                duration = 5000,
+                label = "Harvesting Milk...",
+                useWhileDead = false,
+                canCancel = true,
+                controlDisables = {disableMovement = true, disableCarMovement = true, disableMouse = true, disableCombat = true},
+                animation = {dict = "amb@world_human_bum_wash@male@idle_a", clip = "idle_a"},
+                onCancel = function()
+                    harvesting = false
+                    TriggerEvent("QBCore:Notify", "Milk Harvesting Canceled", "error")
+                end
+            })
+
+            Citizen.Wait(5000) -- Wait for progress bar duration
+
+            -- Check if still harvesting
+            if harvesting then
+                print("Milk event triggered")
+                TriggerServerEvent('cheese:addMilk') -- Give milk
+                Citizen.Wait(2000) -- Short delay
+            end
         end
-    end
-end)
+    end)
+end
 
--- Add interaction logic with qb-target (assuming qb-target is already setup)
-Citizen.CreateThread(function()
-    for i, cow in ipairs(cows) do
-        exports['qb-target']:AddTargetEntity(cow.ped, {
-            options = {
-                {
-                    type = "client",
-                    event = "cheese:harvestMilk",
-                    icon = "fas fa-mug-hot",
-                    label = "Harvest Milk",
-                    action = function()
-                        TriggerEvent('cheese:harvestMilk', i)
-                    end
-                }
-            },
-            distance = 3.0
-        })
+-- Event to start harvesting
+RegisterNetEvent('cheese:startMilkHarvest')
+AddEventHandler('cheese:startMilkHarvest', function(cow)
+    if harvesting then
+        TriggerEvent("QBCore:Notify", "You are already harvesting!", "error")
+        return
     end
+
+    local playerPed = PlayerPedId()
+    local dist = #(GetEntityCoords(playerPed) - GetEntityCoords(cow))
+
+    if dist > 3.0 then
+        TriggerEvent("QBCore:Notify", "You are too far from the cow!", "error")
+        return
+    end
+
+    harvesting = true
+    StartHarvestingLoop(cow)
 end)

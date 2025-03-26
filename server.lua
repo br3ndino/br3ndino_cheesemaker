@@ -1,20 +1,34 @@
 QBCore = exports['qb-core']:GetCoreObject()
 
--- Handle adding milk to player's inventory
+-- Handle the milk harvesting event
+RegisterNetEvent('cheese:harvestMilk')
+AddEventHandler('cheese:harvestMilk', function(cowCoords)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+
+    -- You can check if the player already has milk or any other conditions here
+    -- Add milk to the player's inventory
+    Player.Functions.AddItem('milk', 1)
+
+    -- Notify the player
+    TriggerClientEvent('QBCore:Notify', src, 'You harvested some milk!', 'success')
+
+    -- Optionally, you can add more logic here for removing the cow or other actions after harvesting
+end)
+
+-- Server-side event to add milk
 RegisterNetEvent('cheese:addMilk')
 AddEventHandler('cheese:addMilk', function()
-    local player = QBCore.Functions.GetPlayer(source)
-    local milkItem = "milk"  -- Define milk as an item in your inventory system
-
-    if player then
-        -- Check if player has a valid inventory space
-        if player.Functions.AddItem(milkItem, 1) then
-            TriggerClientEvent('QBCore:Notify', source, 'You have harvested milk!', 'success')
-        else
-            TriggerClientEvent('QBCore:Notify', source, 'You do not have enough inventory space!', 'error')
-        end
+    print("Add milk triggered.")
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if Player then
+        Player.Functions.AddItem("milk", 1) -- Make sure "milk" is a valid item in your database
+        TriggerClientEvent("inventory:client:ItemBox", src, QBCore.Shared.Items["milk"], "add")
+        TriggerClientEvent("QBCore:Notify", src, "You received 1 milk!", "success")
     end
 end)
+
 
 -- Crafting logic (using milk and other ingredients)
 RegisterNetEvent('cheese:craftCheese')
